@@ -10,18 +10,23 @@ import UIKit
 class VC1: UIViewController, UITableViewDelegate {
     
     var arr: [(String, TimeInterval, TimeInterval)] = []
-    
+    var slides = Array<Any>()
     var collectiveTime: TimeInterval = 0
     var beginningTime: TimeInterval = 0
     var currentTime: TimeInterval = 0
     var timer: Timer?
     var formatter: DateFormatter
     var currentRound = 1
-    var best: TimeInterval = 0
-    var worst: TimeInterval = Double.infinity
+    var best: (TimeInterval, Int) = (Double.infinity, 0)
+    var worst: (TimeInterval, Int)  = (0, 0)
+    var currentOffset: Int = 0
+    var licznik: TimerSlide?
+    var zegarek: ClockSlide?
     
-    @IBOutlet weak var timeLabel: UILabel!
+    var timeLabel: UILabel!
     @IBOutlet weak var timeTable: UITableView!
+    @IBOutlet weak var pc: UIPageControl!
+    @IBOutlet weak var sv: UIScrollView!
     
     required init(coder: NSCoder) {
         formatter = DateFormatter();
@@ -35,6 +40,23 @@ class VC1: UIViewController, UITableViewDelegate {
         timeTable.dataSource = self
         super.viewDidLoad()
         timeTable.reloadData()
+        sv.frame = CGRect(x: 0, y: 0, width: 400, height: 400)
+        sv.showsVerticalScrollIndicator = false
+        sv.showsHorizontalScrollIndicator = false
+        let licznik : TimerSlide = Bundle.main.loadNibNamed("TimerSlide", owner: self, options: nil)?.first as! TimerSlide
+        let zegarek : ClockSlide = Bundle.main.loadNibNamed("ClockSlide", owner: self, options: nil)?.first as! ClockSlide
+        timeLabel = licznik.timerLabel
+
+        licznik.frame = CGRect(x: 0, y: 0, width: 400, height: 400)
+        zegarek.frame = CGRect(x: 400, y: 0, width: 400, height: 400)
+        self.licznik = licznik
+        self.zegarek = zegarek
+        sv.addSubview(self.licznik!)
+        sv.addSubview(self.zegarek!)
+        sv.isPagingEnabled = true
+        sv.contentSize = CGSize(width: 800, height: 400)
+        pc.numberOfPages = 2
+        sv.delegate = self
         // Do any additional setup after loading the view.
     }
     
@@ -65,11 +87,37 @@ class VC1: UIViewController, UITableViewDelegate {
         }
     }
     
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        let pageIndex = round(sv.contentOffset.x/400)
+        pc.currentPage = Int(pageIndex)
+    }
+    
+    @IBAction func change(_ sender: UIPageControl) {
+        print(sender.currentPage)
+        let x = CGFloat(sender.currentPage)*400
+        _ = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true, block: {(timer: Timer) -> Void in
+            print(self.currentOffset, x)
+            if (CGFloat(self.currentOffset) != x) {
+                if (CGFloat(self.currentOffset) < x) {
+                    self.currentOffset += 25
+                } else {
+                    self.currentOffset -= 25
+                }
+                self.sv.contentOffset = CGPoint(x: self.currentOffset, y: 0)
+            } else {
+                timer.invalidate()
+            }
+        })
+    }
+    
     func reset() {
         print("Resetting")
         self.currentTime = 0
         self.collectiveTime = 0
         self.beginningTime = 0
+        licznik?.timerLabel.text = "00:00:00,000"
+        zegarek?.clockTicksTimerLabel.text = "00:00:00,000"
+        zegarek?.drawTicks(dateTotal: Date(timeIntervalSince1970: collectiveTime), dateCurr: Date(timeIntervalSince1970: currentTime), rounds: arr.count)
         self.arr = []
         self.timeTable.reloadData()
         print(self.arr)
@@ -77,16 +125,19 @@ class VC1: UIViewController, UITableViewDelegate {
     
     func markRound() {
         print("Round")
-        if (currentTime > worst) {
-            worst = currentRound
-        } else if (currentTime < best) {
-            best = currentRound
+        if (currentTime > worst.0) {
+            worst.0 = currentTime
+            worst.1 = currentRound
+        }
+        if (currentTime < best.0) {
+            best.0 = currentTime
+            best.1 = currentRound
         }
         collectiveTime += currentTime
-        arr.append(("Runda \(currentRound)", currentTime, collectiveTime))
         currentRound += 1
         beginningTime = Date().timeIntervalSince1970
         currentTime = 0
+        arr.append(("Runda \(currentRound)", currentTime, collectiveTime))
         timeTable.reloadData()
     }
     
@@ -98,6 +149,7 @@ class VC1: UIViewController, UITableViewDelegate {
     func startClock() {
         print("Start")
         beginningTime = Date().timeIntervalSince1970
+        arr.append(("Runda \(currentRound)", currentTime, collectiveTime))
         self.timer = Timer.scheduledTimer(timeInterval: 0.005, target: self, selector: #selector(update), userInfo: nil, repeats: true)
     }
     
@@ -106,6 +158,10 @@ class VC1: UIViewController, UITableViewDelegate {
         currentTime += now - beginningTime
         beginningTime = now
         timeLabel.text = formatter.string(from: Date(timeIntervalSince1970: currentTime))
+        arr[arr.count - 1].1 = currentTime
+        arr[arr.count - 1].2 = collectiveTime + currentTime
+        timeTable.reloadData()
+        zegarek?.drawTicks(dateTotal: Date(timeIntervalSince1970: collectiveTime), dateCurr: Date(timeIntervalSince1970: currentTime), rounds: 0)
     }
 }
 
@@ -120,7 +176,21 @@ extension VC1: UITableViewDataSource {
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = self.timeTable.dequeueReusableCell(withIdentifier: "cell", for: indexPath) as! TableData
-        cell.left.text = self.arr[indexPath.row].0
+        let roundNumber = self.arr[indexPath.row].0
+        if (roundNumber == "Runda " + String(best.1)) {
+            cell.left.textColor = UIColor.green
+            cell.mid.textColor = UIColor.green
+            cell.right.textColor = UIColor.green
+        } else if (roundNumber == "Runda " + String(worst.1)) {
+            cell.left.textColor = UIColor.red
+            cell.mid.textColor = UIColor.red
+            cell.right.textColor = UIColor.red
+        } else {
+            cell.left.textColor = UIColor.black
+            cell.mid.textColor = UIColor.black
+            cell.right.textColor = UIColor.black
+        }
+        cell.left.text = roundNumber
         cell.mid.text = formatter.string(from: Date(timeIntervalSince1970: self.arr[indexPath.row].1))
         cell.right.text = formatter.string(from: Date(timeIntervalSince1970: self.arr[indexPath.row].2))
         return cell
