@@ -22,6 +22,7 @@ class VC1: UIViewController, UITableViewDelegate {
     var currentOffset: Int = 0
     var licznik: TimerSlide?
     var zegarek: ClockSlide?
+    var flick: [Int] = []
     
     var timeLabel: UILabel!
     @IBOutlet weak var timeTable: UITableView!
@@ -54,6 +55,7 @@ class VC1: UIViewController, UITableViewDelegate {
         sv.addSubview(self.licznik!)
         sv.addSubview(self.zegarek!)
         sv.isPagingEnabled = true
+        sv.isScrollEnabled = true
         sv.contentSize = CGSize(width: 800, height: 400)
         pc.numberOfPages = 2
         sv.delegate = self
@@ -89,32 +91,47 @@ class VC1: UIViewController, UITableViewDelegate {
     
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         let pageIndex = round(sv.contentOffset.x/400)
+        self.currentOffset = Int(sv.contentOffset.x)
         pc.currentPage = Int(pageIndex)
     }
     
     @IBAction func change(_ sender: UIPageControl) {
-        print(sender.currentPage)
-        let x = CGFloat(sender.currentPage)*400
-        _ = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true, block: {(timer: Timer) -> Void in
-            print(self.currentOffset, x)
+        scrollViewDidScroll(sv)
+        flick.append(sender.currentPage == 0 ? 1 : 0)
+        print(flick)
+        if (flick.count == 1) {
+            self.interval(pgnum: flick[0])
+        }
+    }
+    
+    func interval (pgnum: Int) {
+        var x = CGFloat(pgnum)*400
+        Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true, block: {(timer: Timer) -> Void in
+            //print(self.currentOffset, x)
             if (CGFloat(self.currentOffset) != x) {
                 if (CGFloat(self.currentOffset) < x) {
-                    self.currentOffset += 25
+                    self.currentOffset += 4
                 } else {
-                    self.currentOffset -= 25
+                    self.currentOffset -= 4
                 }
                 self.sv.contentOffset = CGPoint(x: self.currentOffset, y: 0)
+            } else if (self.flick.count > 1) {
+                self.scrollViewDidScroll(self.sv)
+                self.flick.removeFirst()
+                x = CGFloat(self.flick[0]*400)
             } else {
+                self.scrollViewDidScroll(self.sv)
+                self.flick.removeFirst()
                 timer.invalidate()
             }
         })
     }
-    
     func reset() {
         print("Resetting")
         self.currentTime = 0
         self.collectiveTime = 0
         self.beginningTime = 0
+        self.currentRound = 1
         licznik?.timerLabel.text = "00:00:00,000"
         zegarek?.clockTicksTimerLabel.text = "00:00:00,000"
         zegarek?.drawTicks(dateTotal: Date(timeIntervalSince1970: collectiveTime), dateCurr: Date(timeIntervalSince1970: currentTime), rounds: arr.count)
@@ -137,7 +154,7 @@ class VC1: UIViewController, UITableViewDelegate {
         currentRound += 1
         beginningTime = Date().timeIntervalSince1970
         currentTime = 0
-        arr.append(("Runda \(currentRound)", currentTime, collectiveTime))
+        arr.insert(("Runda \(currentRound)", currentTime, collectiveTime), at: 0)
         timeTable.reloadData()
     }
     
@@ -149,7 +166,9 @@ class VC1: UIViewController, UITableViewDelegate {
     func startClock() {
         print("Start")
         beginningTime = Date().timeIntervalSince1970
-        arr.append(("Runda \(currentRound)", currentTime, collectiveTime))
+        if (arr.count == 0) {
+            arr.insert(("Runda \(currentRound)", currentTime, collectiveTime), at: 0)
+        }
         self.timer = Timer.scheduledTimer(timeInterval: 0.005, target: self, selector: #selector(update), userInfo: nil, repeats: true)
     }
     
@@ -158,10 +177,11 @@ class VC1: UIViewController, UITableViewDelegate {
         currentTime += now - beginningTime
         beginningTime = now
         timeLabel.text = formatter.string(from: Date(timeIntervalSince1970: currentTime))
-        arr[arr.count - 1].1 = currentTime
-        arr[arr.count - 1].2 = collectiveTime + currentTime
+        arr[0].1 = currentTime
+        arr[0].2 = collectiveTime + currentTime
         timeTable.reloadData()
-        zegarek?.drawTicks(dateTotal: Date(timeIntervalSince1970: collectiveTime), dateCurr: Date(timeIntervalSince1970: currentTime), rounds: 0)
+        zegarek?.drawTicks(dateTotal: Date(timeIntervalSince1970: collectiveTime + currentTime), dateCurr: Date(timeIntervalSince1970: currentTime), rounds: arr.count)
+        zegarek?.clockTicksTimerLabel.text = formatter.string(from: Date(timeIntervalSince1970: currentTime))
     }
 }
 
